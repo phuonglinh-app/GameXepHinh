@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Ghép hình – Mùa hè vui sao</title>
+<style>
+:root{--blue:#2e6be0;--ink:#12324d;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;min-height:100%}
+body{font-family:"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);overflow-x:hidden;
+  background:linear-gradient(180deg,#d6f5ff 0,#f2fcff 55%,#e3f6cf 100%);background-attachment:fixed}
+#top{padding:8px 12px 0;text-align:center}
+h1{margin:0;font-size:clamp(20px,4vw,28px);color:var(--blue)}
+.sub{margin:2px 0 0;font-size:13px;opacity:.7}
+.bar{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center;padding:8px 0}
+.bar button,.bar select{font:inherit;font-size:14px;padding:7px 12px;border-radius:10px;border:1px solid #9ccbe3;
+  background:#fff;color:var(--ink);cursor:pointer}
+.bar button.primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+.bar button:active{transform:translateY(1px)}
+.bar label{font-size:14px;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
+.stat{font-size:14px;background:rgba(255,255,255,.7);border-radius:10px;padding:6px 10px;border:1px solid #cfe9f5}
+.stat b{color:var(--blue)}
+#wrap{padding:6px 12px 24px}
+#stage{position:relative;margin:0 auto;touch-action:none;user-select:none;-webkit-user-select:none}
+#tray{position:absolute;border:2px dashed #7fb8d6;border-radius:16px;background:rgba(255,255,255,.45);z-index:0}
+#tray span{position:absolute;left:12px;top:6px;font-size:12px;opacity:.55}
+#board{position:absolute;left:0;top:0;z-index:1;border-radius:4px;background:#fff;
+  box-shadow:0 4px 18px rgba(20,90,140,.28)}
+.piece{position:absolute;pointer-events:none}
+.piece.free{filter:drop-shadow(0 3px 4px rgba(0,0,0,.35))}
+.piece.drag{filter:drop-shadow(0 9px 10px rgba(0,0,0,.4))}
+.piece.snap{transition:left .15s ease,top .15s ease}
+.modal{position:fixed;inset:0;background:rgba(10,40,60,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal.show{display:flex}
+.card{background:#fff;border-radius:18px;padding:18px;text-align:center;max-width:94vw;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.card img{max-width:86vw;max-height:70vh;border-radius:10px;display:block;margin:0 auto 10px}
+.card h2{margin:0 0 6px;color:var(--blue);font-size:26px}
+.card p{margin:4px 0 12px}
+.card button{font:inherit;padding:9px 18px;border-radius:10px;border:0;background:var(--blue);color:#fff;font-weight:600;cursor:pointer}
+.confetti{position:fixed;top:-40px;font-size:26px;z-index:1001;pointer-events:none;animation:fall linear forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(360deg);opacity:.9}}
+</style>
+</head>
+<body>
+<div id="top">
+  <h1>🧩 Trò chơi ghép hình</h1>
+  <p class="sub">Kéo các mảnh từ khay vào đúng vị trí trên khung. Mảnh đúng chỗ sẽ tự khớp.</p>
+  <div class="bar">
+    <select id="pic" title="Chọn hình">
+      <option value="summer" selected>🌈 Mùa hè vui sao</option>
+      <option value="wish">🌸 Chúc các bạn vui vẻ</option>
+    </select>
+    <select id="size" title="Số mảnh">
+      <option value="3x3" selected>3 × 3 (9 mảnh)</option>
+      <option value="4x3">4 × 3 (12 mảnh)</option>
+      <option value="4x4">4 × 4 (16 mảnh)</option>
+      <option value="5x5">5 × 5 (25 mảnh)</option>
+    </select>
+    <button class="primary" id="btnNew">🔀 Trộn lại</button>
+    <button id="btnPrev">🖼️ Xem hình mẫu</button>
+    <label><input type="checkbox" id="chkGuide" checked> Đường cắt</label>
+    <label><input type="checkbox" id="chkGhost" checked> Hình mờ</label>
+    <span class="stat">⏱ <b id="tTime">00:00</b></span>
+    <span class="stat">Lượt: <b id="tMoves">0</b></span>
+    <span class="stat">Đã ghép: <b id="tDone">0/9</b></span>
+  </div>
+</div>
+
+<div id="wrap">
+  <div id="stage">
+    <div id="tray"><span>Khay mảnh ghép</span></div>
+    <canvas id="board"></canvas>
+  </div>
+</div>
+
+<div class="modal" id="mPrev"><div class="card"><img id="prevImg" alt="Hình mẫu"><button id="btnClosePrev">Đóng</button></div></div>
+<div class="modal" id="mWin"><div class="card">
+  <h2>🎉 Chúc mừng bạn!</h2>
+  <p id="winTxt"></p>
+  <button id="btnAgain">Chơi lại</button>
+</div></div>
+
+<script>
+(() => {
+const REF_W = 605, REF_H = 466;
+const $ = id => document.getElementById(id);
+const stage = $('stage'), boardCv = $('board'), tray = $('tray');
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+const hitCtx = document.createElement('canvas').getContext('2d');
+
+let cols = 3, rows = 3, boardW, boardH, cw, ch, pad, stageW, stageH;
+let trayR = {x:0,y:0,w:0,h:0}, land = false;
+let pieces = [], zTop = 10, lockedN = 0, moves = 0, won = false;
+let started = false, t0 = 0, timerId = null, sceneCv, hs = [], vs = [], drag = null;
+let lastW = window.innerWidth, lastLand = null;
+
+/* ---------- Vẽ hình nền (phỏng theo hình mẫu) ---------- */
+function flower(ctx, f){
+  const {x,y,r,c,ctr,ex,ey,bend} = f;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#2fa84a'; ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.moveTo(x, y + r*.6); ctx.quadraticCurveTo(x + bend, (y+ey)/2, ex, ey); ctx.stroke();
+  // lá
+  ctx.fillStyle = '#3cc05a';
+  ctx.beginPath(); ctx.ellipse(x + bend*.5 + 6, (y+ey)/2 + 4, 7, 3.2, -0.6, 0, 7); ctx.fill();
+  // cỏ ở gốc
+  ctx.lineWidth = 2;
+  [-7,0,7].forEach(k => { ctx.beginPath(); ctx.moveTo(ex, ey); ctx.quadraticCurveTo(ex + k*.6, ey-8, ex + k, ey-13); ctx.stroke(); });
+  // cánh
+  for(let i=0;i<6;i++){
+    const a = i*Math.PI/3;
+    ctx.beginPath(); ctx.arc(x + Math.cos(a)*r*.62, y + Math.sin(a)*r*.62, r*.44, 0, 7);
+    ctx.fillStyle = c; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  ctx.beginPath(); ctx.arc(x, y, r*.38, 0, 7); ctx.fillStyle = ctr; ctx.fill();
+  ctx.strokeStyle = '#e03030'; ctx.lineWidth = 1.2; ctx.stroke();
+}
+
+/* Hình 2: "Chúc các bạn có một ngày vui vẻ" */
+function drawScene2(ctx, W, H){
+  ctx.save();
+  ctx.scale(W/REF_W, H/REF_H);
+  let g = ctx.createLinearGradient(0,0,0,380);
+  g.addColorStop(0,'#1fe0fc'); g.addColorStop(.6,'#7aeafd'); g.addColorStop(1,'#d9f9ff');
+  ctx.fillStyle = g; ctx.fillRect(0,0,REF_W,REF_H);
+  // cầu vồng bên trái
+  const cx = 470, cy = 375;
+  const bands = ['#ff6a5a','#ffa04a','#ffe566','#8be06a','#5cc0ff','#8878ff','#bb78ff'];
+  ctx.save();
+  try{ ctx.filter = 'blur(4px)'; }catch(e){}
+  ctx.globalAlpha = .6; ctx.lineWidth = 9;
+  bands.forEach((col,i) => {
+    ctx.strokeStyle = col; ctx.beginPath();
+    ctx.arc(cx, cy, 450 - i*7, Math.PI*0.97, Math.PI*1.7); ctx.stroke();
+  });
+  ctx.restore();
+  g = ctx.createRadialGradient(40,380,5,40,380,120);
+  g.addColorStop(0,'rgba(255,255,255,.8)'); g.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0,260,220,210);
+  // chân trời & cỏ
+  g = ctx.createLinearGradient(0,340,0,385);
+  g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(1,'rgba(255,255,255,.95)');
+  ctx.fillStyle = g; ctx.fillRect(0,340,REF_W,45);
+  g = ctx.createLinearGradient(0,375,0,REF_H);
+  g.addColorStop(0,'#fbfff6'); g.addColorStop(.3,'#e0f5c4'); g.addColorStop(1,'#a8dc78');
+  ctx.fillStyle = g; ctx.fillRect(0,375,REF_W,REF_H-375);
+  // hoa
+  [
+    {x:77,y:387,r:13,c:'#f01818',ctr:'#ffe21a',ex:62,ey:440,bend:-10},
+    {x:124,y:382,r:13,c:'#1f9a46',ctr:'#ffe21a',ex:96,ey:440,bend:-14},
+    {x:167,y:366,r:14,c:'#ff8a1a',ctr:'#ffe21a',ex:152,ey:420,bend:-10},
+    {x:183,y:400,r:15,c:'#ffe81a',ctr:'#ffc400',ex:182,ey:446,bend:3},
+    {x:265,y:364,r:15,c:'#a8e58a',ctr:'#ffe21a',ex:240,ey:418,bend:-16},
+    {x:274,y:398,r:14,c:'#7f9bc5',ctr:'#ffe21a',ex:290,ey:446,bend:10},
+    {x:337,y:369,r:14,c:'#3a63e6',ctr:'#ffe21a',ex:328,ey:420,bend:-6},
+    {x:363,y:380,r:14,c:'#b79bff',ctr:'#ffe21a',ex:360,ey:440,bend:3},
+    {x:428,y:368,r:14,c:'#8a1fa0',ctr:'#ffe21a',ex:408,ey:414,bend:-14},
+    {x:465,y:376,r:14,c:'#f58ac0',ctr:'#ffe21a',ex:445,ey:436,bend:-14},
+    {x:494,y:390,r:11,c:'#ffd9c4',ctr:'#ffe21a',ex:505,ey:440,bend:8},
+    {x:563,y:350,r:14,c:'#c4c4c4',ctr:'#ffe21a',ex:572,ey:392,bend:6},
+    {x:556,y:416,r:12,c:'#ffffff',ctr:'#ffd400',ex:566,ey:446,bend:6}
+  ].forEach(f => flower(ctx, f));
+  // chữ
+  ctx.fillStyle = '#3b3bf0';
+  ctx.font = '31px "Times New Roman", Times, serif';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Chúc các bạn có một ngày vui vẻ', 52, 54);
+  ctx.restore();
+}
+
+function drawScene(ctx, W, H){
+  if($('pic').value === 'wish') return drawScene2(ctx, W, H);
+  ctx.save();
+  ctx.scale(W/REF_W, H/REF_H);
+  // trời
+  let g = ctx.createLinearGradient(0,0,0,400);
+  g.addColorStop(0,'#17dcfb'); g.addColorStop(.55,'#6fe9fd'); g.addColorStop(1,'#e8fbff');
+  ctx.fillStyle = g; ctx.fillRect(0,0,REF_W,REF_H);
+  // cầu vồng
+  const cx = 480, cy = 380;
+  const bands = ['#ff5a4d','#ff9a3c','#ffe14a','#7bdc5a','#4fb7ff','#7a6bff','#b46bff'];
+  ctx.save();
+  try{ ctx.filter = 'blur(3px)'; }catch(e){}
+  ctx.globalAlpha = .75; ctx.lineWidth = 7;
+  bands.forEach((col,i) => {
+    ctx.strokeStyle = col; ctx.beginPath();
+    ctx.arc(cx, cy, 455 - i*6.2, Math.PI*0.96, Math.PI*1.72); ctx.stroke();
+  });
+  ctx.restore();
+  // quầng sáng chân cầu vồng
+  g = ctx.createRadialGradient(35,385,5,35,385,110);
+  g.addColorStop(0,'rgba(255,255,255,.85)'); g.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0,270,200,200);
+  // đường chân trời mờ
+  g = ctx.createLinearGradient(0,330,0,390);
+  g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(1,'rgba(255,255,255,.9)');
+  ctx.fillStyle = g; ctx.fillRect(0,330,REF_W,60);
+  // cỏ
+  g = ctx.createLinearGradient(0,380,0,REF_H);
+  g.addColorStop(0,'#f6fff1'); g.addColorStop(.25,'#d5f3b2'); g.addColorStop(1,'#8ed05a');
+  ctx.fillStyle = g; ctx.fillRect(0,380,REF_W,REF_H-380);
+  // hoa
+  [
+    {x:57,y:346,r:14,c:'#3a63e6',ctr:'#ffe21a',ex:48,ey:440,bend:-14},
+    {x:57,y:406,r:14,c:'#f58ac0',ctr:'#ffe21a',ex:50,ey:448,bend:-4},
+    {x:102,y:388,r:12,c:'#ffffff',ctr:'#ffd400',ex:100,ey:440,bend:3},
+    {x:195,y:402,r:14,c:'#ff8a1a',ctr:'#ffe21a',ex:200,ey:450,bend:6},
+    {x:275,y:376,r:15,c:'#ec2a2a',ctr:'#ffe21a',ex:265,ey:430,bend:-8},
+    {x:338,y:383,r:16,c:'#ffe81a',ctr:'#ffc400',ex:332,ey:432,bend:-4},
+    {x:404,y:386,r:15,c:'#1f9a46',ctr:'#ffe21a',ex:395,ey:448,bend:-6},
+    {x:497,y:390,r:14,c:'#a8e58a',ctr:'#ffe21a',ex:470,ey:432,bend:-18},
+    {x:546,y:365,r:14,c:'#7f9bc5',ctr:'#ffe21a',ex:540,ey:414,bend:-3},
+    {x:577,y:384,r:14,c:'#b79bff',ctr:'#ffe21a',ex:578,ey:440,bend:3}
+  ].forEach(f => flower(ctx, f));
+  // chữ
+  ctx.fillStyle = '#3d6ae8';
+  ctx.font = '35px "Times New Roman", Times, serif';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Mùa hè vui sao', 180, 191);
+  ctx.restore();
+}
+
+/* ---------- Hình dạng mảnh ghép (jigsaw) ---------- */
+function edge(p, x0, y0, x1, y1, s){
+  if(!s){ p.lineTo(x1, y1); return; }
+  const dx = x1-x0, dy = y1-y0, nx = -dy*s, ny = dx*s;
+  const P = (u,v) => [x0 + dx*u + nx*v, y0 + dy*u + ny*v];
+  const seg = (a,b,c) => p.bezierCurveTo(...P(...a), ...P(...b), ...P(...c));
+  p.lineTo(...P(.40,0));
+  seg([.44,0],[.45,.04],[.44,.07]);
+  seg([.36,.10],[.37,.27],[.50,.27]);
+  seg([.63,.27],[.64,.10],[.56,.07]);
+  seg([.55,.04],[.56,0],[.60,0]);
+  p.lineTo(x1, y1);
+}
+function piecePath(r, c){
+  const p = new Path2D(), x = pad, y = pad;
+  p.moveTo(x, y);
+  edge(p, x, y, x+cw, y,       r > 0        ?  hs[r][c]     : 0);
+  edge(p, x+cw, y, x+cw, y+ch, c < cols-1   ? -vs[r][c+1]   : 0);
+  edge(p, x+cw, y+ch, x, y+ch, r < rows-1   ? -hs[r+1][c]   : 0);
+  edge(p, x, y+ch, x, y,       c > 0        ?  vs[r][c]     : 0);
+  p.closePath();
+  return p;
+}
+
+/* ---------- Bố cục ---------- */
+function layout(){
+  const GAP = 18, ratio = REF_H/REF_W;
+  const aw = Math.min(window.innerWidth - 24, 1240);
+  const ah = Math.max(window.innerHeight - $('top').offsetHeight - 24, 340);
+  land = aw >= 700 && aw > ah*1.1;
+  if(land) boardW = Math.max(260, Math.min((aw-GAP)/2.05, ah/ratio/1.04));
+  else     boardW = Math.max(240, Math.min(aw, (ah-GAP)/(ratio*1.95)));
+  boardW = Math.floor(boardW);
+  boardH = Math.round(boardW*ratio);
+  cw = boardW/cols; ch = boardH/rows;
+  pad = Math.round(Math.max(cw,ch)*0.3);
+  if(land){
+    const tw = Math.round(boardW*1.05), th = Math.round(boardH*1.04);
+    trayR = {x:boardW+GAP, y:0, w:tw, h:th};
+    stageW = boardW+GAP+tw; stageH = Math.max(boardH, th);
+  }else{
+    const th = Math.round(boardH*.95);
+    trayR = {x:0, y:boardH+GAP, w:boardW, h:th};
+    stageW = boardW; stageH = boardH+GAP+th;
+  }
+  stage.style.width = stageW+'px';
+  stage.style.height = stageH+'px';
+  Object.assign(tray.style, {left:trayR.x+'px', top:trayR.y+'px', width:trayR.w+'px', height:trayR.h+'px'});
+}
+
+/* ---------- Tạo game ---------- */
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.random()*(i+1)|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
+const rnd = () => Math.random() < .5 ? 1 : -1;
+
+function setPos(p, x, y){ p.x = x; p.y = y; p.cv.style.left = x+'px'; p.cv.style.top = y+'px'; }
+
+function makePiece(r, c){
+  const w = cw + 2*pad, h = ch + 2*pad;
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+  cv.style.width = w+'px'; cv.style.height = h+'px';
+  cv.className = 'piece free';
+  const ctx = cv.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const path = piecePath(r, c);
+  ctx.save(); ctx.clip(path);
+  ctx.drawImage(sceneCv, pad - c*cw, pad - r*ch, boardW, boardH);
+  ctx.restore();
+  ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = '#111';
+  ctx.stroke(path);
+  stage.appendChild(cv);
+  return {r, c, cv, path, x:0, y:0, z:10, locked:false};
+}
+
+function scatter(){
+  const n = pieces.length;
+  const tc = Math.max(1, Math.ceil(Math.sqrt(n * trayR.w / trayR.h)));
+  const tr = Math.ceil(n / tc);
+  const slots = [];
+  for(let i=0;i<n;i++) slots.push([i%tc, Math.floor(i/tc)]);
+  shuffle(slots);
+  const inset = 8;
+  const rx = Math.max(0, trayR.w - cw - inset*2), ry = Math.max(0, trayR.h - ch - inset*2);
+  pieces.forEach((p, i) => {
+    const [col,row] = slots[i];
+    let ox = tc > 1 ? col*rx/(tc-1) : rx/2;
+    let oy = tr > 1 ? row*ry/(tr-1) : ry/2;
+    ox += (Math.random()-.5)*Math.min(26, cw*.2);
+    oy += (Math.random()-.5)*Math.min(26, ch*.2);
+    ox = Math.min(Math.max(ox,0), rx); oy = Math.min(Math.max(oy,0), ry);
+    p.z = 10 + i; p.cv.style.zIndex = p.z;
+    setPos(p, trayR.x + inset + ox - pad, trayR.y + inset + oy - pad);
+  });
+  zTop = 10 + n;
+}
+
+function drawBoard(){
+  boardCv.width = Math.round(boardW*dpr); boardCv.height = Math.round(boardH*dpr);
+  boardCv.style.width = boardW+'px'; boardCv.style.height = boardH+'px';
+  const ctx = boardCv.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#f4fbff'; ctx.fillRect(0,0,boardW,boardH);
+  if($('chkGhost').checked){
+    ctx.globalAlpha = .22; ctx.drawImage(sceneCv, 0, 0, boardW, boardH); ctx.globalAlpha = 1;
+  }
+  if($('chkGuide').checked){
+    ctx.lineJoin = 'round'; ctx.lineWidth = 2.5; ctx.strokeStyle = 'rgba(0,0,0,.55)';
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+      ctx.save(); ctx.translate(c*cw - pad, r*ch - pad);
+      ctx.stroke(piecePath(r,c));
+      ctx.restore();
+    }
+  }
+}
+
+function updateStats(){
+  $('tMoves').textContent = moves;
+  $('tDone').textContent = lockedN + '/' + (cols*rows);
+}
+function fmt(ms){
+  const s = Math.floor(ms/1000);
+  return String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+}
+function startTimer(){
+  if(started) return;
+  started = true; t0 = Date.now();
+  timerId = setInterval(() => { $('tTime').textContent = fmt(Date.now()-t0); }, 500);
+}
+
+function newGame(){
+  clearInterval(timerId);
+  started = false; won = false; moves = 0; lockedN = 0; drag = null;
+  $('tTime').textContent = '00:00';
+  $('mWin').classList.remove('show');
+  pieces.forEach(p => p.cv.remove()); pieces = [];
+  const sz = $('size').value.split('x'); cols = +sz[0]; rows = +sz[1];
+  layout();
+  sceneCv = document.createElement('canvas');
+  sceneCv.width = Math.round(boardW*dpr); sceneCv.height = Math.round(boardH*dpr);
+  drawScene(sceneCv.getContext('2d'), sceneCv.width, sceneCv.height);
+  hs = []; vs = [];
+  for(let r=0;r<rows;r++){ hs[r] = []; vs[r] = []; for(let c=0;c<cols;c++){ hs[r][c] = rnd(); vs[r][c] = rnd(); } }
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++) pieces.push(makePiece(r,c));
+  drawBoard();
+  scatter();
+  updateStats();
+  lastLand = land; lastW = window.innerWidth;
+}
+
+/* ---------- Kéo thả ---------- */
+function pt(e){ const rc = stage.getBoundingClientRect(); return [e.clientX - rc.left, e.clientY - rc.top]; }
+
+stage.addEventListener('pointerdown', e => {
+  if(won || drag) return;
+  const [x,y] = pt(e);
+  const cand = pieces.filter(p => !p.locked).sort((a,b) => b.z - a.z);
+  hitCtx.lineWidth = 14;
+  for(const p of cand){
+    const lx = x - p.x, ly = y - p.y;
+    if(hitCtx.isPointInPath(p.path, lx, ly) || hitCtx.isPointInStroke(p.path, lx, ly)){
+      drag = {p, dx:lx, dy:ly, id:e.pointerId};
+      p.z = ++zTop; p.cv.style.zIndex = p.z;
+      p.cv.classList.remove('snap'); p.cv.classList.add('drag');
+      try{ stage.setPointerCapture(e.pointerId); }catch(_){}
+      startTimer();
+      e.preventDefault();
+      break;
+    }
+  }
+});
+
+stage.addEventListener('pointermove', e => {
+  if(!drag || e.pointerId !== drag.id) return;
+  const [x,y] = pt(e);
+  const p = drag.p;
+  let nx = x - drag.dx, ny = y - drag.dy;
+  nx = Math.min(Math.max(nx + pad, 0), stageW - cw) - pad;
+  ny = Math.min(Math.max(ny + pad, 0), stageH - ch) - pad;
+  setPos(p, nx, ny);
+  e.preventDefault();
+});
+
+function endDrag(e){
+  if(!drag || e.pointerId !== drag.id) return;
+  const p = drag.p; drag = null;
+  p.cv.classList.remove('drag');
+  moves++;
+  const tx = p.c*cw - pad, ty = p.r*ch - pad;
+  const dist = Math.hypot(p.x - tx, p.y - ty);
+  if(dist < Math.min(cw,ch)*0.3){
+    p.cv.classList.add('snap');
+    setPos(p, tx, ty);
+    p.locked = true; p.z = 2; p.cv.style.zIndex = 2;
+    p.cv.classList.remove('free');
+    lockedN++;
+    if(lockedN === pieces.length) win();
+  }
+  updateStats();
+}
+stage.addEventListener('pointerup', endDrag);
+stage.addEventListener('pointercancel', endDrag);
+stage.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ---------- Chiến thắng ---------- */
+function win(){
+  won = true; clearInterval(timerId);
+  const el = fmt(Date.now() - t0);
+  $('winTxt').textContent = 'Bạn đã hoàn thành bức tranh "' + $('pic').selectedOptions[0].textContent.replace(/^\S+\s/, '') + '" trong ' + el + ' với ' + moves + ' lượt kéo.';
+  for(let i=0;i<40;i++){
+    const s = document.createElement('span');
+    s.className = 'confetti';
+    s.textContent = ['🌸','🌼','🌈','⭐','🌻'][i%5];
+    s.style.left = Math.random()*100 + 'vw';
+    s.style.animationDuration = (2.5 + Math.random()*2.5) + 's';
+    s.style.animationDelay = (Math.random()*1.2) + 's';
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 7000);
+  }
+  setTimeout(() => $('mWin').classList.add('show'), 700);
+}
+
+/* ---------- Nút điều khiển ---------- */
+$('btnNew').onclick = newGame;
+$('btnAgain').onclick = newGame;
+$('size').onchange = newGame;
+$('pic').onchange = () => { $('size').value = $('pic').value === 'wish' ? '5x5' : '3x3'; newGame(); };
+$('chkGuide').onchange = drawBoard;
+$('chkGhost').onchange = drawBoard;
+$('btnPrev').onclick = () => { $('prevImg').src = sceneCv.toDataURL(); $('mPrev').classList.add('show'); };
+$('btnClosePrev').onclick = () => $('mPrev').classList.remove('show');
+$('mPrev').onclick = e => { if(e.target === $('mPrev')) $('mPrev').classList.remove('show'); };
+$('mWin').onclick = e => { if(e.target === $('mWin')) $('mWin').classList.remove('show'); };
+
+let rt;
+window.addEventListener('resize', () => {
+  clearTimeout(rt);
+  rt = setTimeout(() => {
+    if(Math.abs(window.innerWidth - lastW) > 30) newGame();
+  }, 300);
+});
+
+newGame();
+})();
+</script>
+</body>
+</html>
