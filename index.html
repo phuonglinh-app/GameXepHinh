@@ -45,12 +45,17 @@ h1{margin:0;font-size:clamp(20px,4vw,28px);color:var(--blue)}
 <body>
 <div id="top">
   <h1>🧩 Trò chơi ghép hình</h1>
-  <p class="sub">Kéo các mảnh từ khay vào đúng vị trí trên khung. Mảnh đúng chỗ sẽ tự khớp.</p>
+  <p class="sub">Kéo các mảnh từ khay vào đúng vị trí trên khung. Mảnh đúng chỗ sẽ tự khớp. Bạn có thể thêm ảnh của mình (ảnh chỉ nằm trên máy bạn, không được tải đi đâu).</p>
   <div class="bar">
     <select id="pic" title="Chọn hình">
       <option value="summer" selected>🌈 Mùa hè vui sao</option>
       <option value="wish">🌸 Chúc các bạn vui vẻ</option>
+      <option value="moon">🌙 Mặt trăng</option>
     </select>
+    <button id="btnAdd" title="Chọn ảnh từ thư viện / bộ nhớ máy">📁 Thêm ảnh</button>
+    <button id="btnCam" title="Chụp ảnh mới bằng camera">📸 Chụp ảnh</button>
+    <input type="file" id="fileAdd" accept="image/*" hidden>
+    <input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
     <select id="size" title="Số mảnh">
       <option value="3x3" selected>3 × 3 (9 mảnh)</option>
       <option value="4x3">4 × 3 (12 mảnh)</option>
@@ -170,8 +175,62 @@ function drawScene2(ctx, W, H){
   ctx.restore();
 }
 
+/* Hình 3: Mặt trăng */
+function drawScene3(ctx, W, H){
+  ctx.save();
+  ctx.scale(W/REF_W, H/REF_H);
+  let g = ctx.createLinearGradient(0,0,0,385);
+  g.addColorStop(0,'#0a28b8'); g.addColorStop(.45,'#1236cc'); g.addColorStop(.78,'#3b5ee0');
+  g.addColorStop(.93,'#b9c8f6'); g.addColorStop(1,'#ffffff');
+  ctx.fillStyle = g; ctx.fillRect(0,0,REF_W,385);
+  // vệt sáng bên phải
+  g = ctx.createLinearGradient(607,280,540,380);
+  g.addColorStop(0,'rgba(255,255,255,.05)'); g.addColorStop(1,'rgba(255,255,255,.5)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(607,285); ctx.lineTo(607,375); ctx.lineTo(535,380); ctx.closePath(); ctx.fill();
+  // trăng lưỡi liềm
+  const t = document.createElement('canvas'); t.width = W; t.height = H;
+  const tc = t.getContext('2d'); tc.scale(W/REF_W, H/REF_H);
+  tc.fillStyle = '#fff'; tc.beginPath(); tc.arc(478,82,92,0,7); tc.fill();
+  tc.globalCompositeOperation = 'destination-out';
+  tc.beginPath(); tc.arc(440,56,84,0,7); tc.fill();
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,255,255,.7)'; ctx.shadowBlur = 16*W/REF_W;
+  ctx.drawImage(t, 0, 0, REF_W, REF_H);
+  ctx.restore();
+  // cỏ
+  g = ctx.createLinearGradient(0,378,0,REF_H);
+  g.addColorStop(0,'#ffffff'); g.addColorStop(.25,'#b8e8a0'); g.addColorStop(.6,'#3da83a'); g.addColorStop(1,'#168a1e');
+  ctx.fillStyle = g; ctx.fillRect(0,378,REF_W,REF_H-378);
+  // hoa
+  [
+    {x:42,y:376,r:14,c:'#f01818',ctr:'#ffe21a',ex:30,ey:436,bend:-12},
+    {x:88,y:361,r:14,c:'#ff8a1a',ctr:'#ffe21a',ex:100,ey:414,bend:10},
+    {x:153,y:394,r:13,c:'#a8e58a',ctr:'#ffe21a',ex:130,ey:440,bend:-14},
+    {x:183,y:397,r:15,c:'#ffe81a',ctr:'#ffc400',ex:165,ey:446,bend:-10},
+    {x:227,y:393,r:14,c:'#1f9a46',ctr:'#ffe21a',ex:232,ey:446,bend:4},
+    {x:261,y:397,r:12,c:'#7f9bc5',ctr:'#ffe21a',ex:282,ey:438,bend:12},
+    {x:314,y:389,r:14,c:'#2a5cf0',ctr:'#ffe21a',ex:328,ey:436,bend:8},
+    {x:390,y:396,r:13,c:'#b79bff',ctr:'#ffe21a',ex:385,ey:444,bend:-4},
+    {x:442,y:388,r:13,c:'#8a1fa0',ctr:'#ffe21a',ex:438,ey:446,bend:-3},
+    {x:505,y:399,r:13,c:'#f58ac0',ctr:'#ffe21a',ex:486,ey:446,bend:-14},
+    {x:545,y:381,r:13,c:'#ffd9c4',ctr:'#ffe21a',ex:528,ey:444,bend:-12},
+    {x:569,y:357,r:14,c:'#e8cdb8',ctr:'#ffe21a',ex:566,ey:440,bend:6}
+  ].forEach(f => flower(ctx, f));
+  ctx.restore();
+}
+
+/* Ảnh người dùng tự thêm (nằm trong bộ nhớ trình duyệt, không tải lên đâu) */
+const customs = [];
+
 function drawScene(ctx, W, H){
-  if($('pic').value === 'wish') return drawScene2(ctx, W, H);
+  const v = $('pic').value;
+  if(v === 'wish') return drawScene2(ctx, W, H);
+  if(v === 'moon') return drawScene3(ctx, W, H);
+  if(v.startsWith('custom:')){
+    const cv = customs[+v.slice(7)];
+    if(cv){ ctx.drawImage(cv, 0, 0, W, H); return; }
+  }
   ctx.save();
   ctx.scale(W/REF_W, H/REF_H);
   // trời
@@ -447,7 +506,52 @@ function win(){
 $('btnNew').onclick = newGame;
 $('btnAgain').onclick = newGame;
 $('size').onchange = newGame;
-$('pic').onchange = () => { $('size').value = $('pic').value === 'wish' ? '5x5' : '3x3'; newGame(); };
+$('pic').onchange = () => {
+  const v = $('pic').value;
+  $('size').value = (v === 'wish' || v === 'moon') ? '5x5' : v.startsWith('custom:') ? '4x3' : '3x3';
+  newGame();
+};
+
+/* Thêm ảnh cá nhân: chọn từ máy, chụp bằng camera, hoặc kéo thả file vào trang */
+async function addPhoto(file){
+  if(!file || !file.type.startsWith('image/')){ alert('Vui lòng chọn một file ảnh.'); return; }
+  try{
+    let bmp;
+    try{ bmp = await createImageBitmap(file, {imageOrientation:'from-image'}); }
+    catch(_){
+      bmp = await new Promise((res, rej) => {
+        const im = new Image();
+        im.onload = () => res(im); im.onerror = rej;
+        im.src = URL.createObjectURL(file);
+      });
+    }
+    const iw = bmp.width || bmp.naturalWidth, ih = bmp.height || bmp.naturalHeight;
+    const MW = 1210, MH = 932;                       // cùng tỉ lệ khung chơi
+    const cv = document.createElement('canvas'); cv.width = MW; cv.height = MH;
+    const c = cv.getContext('2d');
+    const s = Math.max(MW/iw, MH/ih), dw = iw*s, dh = ih*s;
+    c.drawImage(bmp, (MW-dw)/2, (MH-dh)/2, dw, dh);  // cắt giữa ảnh cho vừa khung
+    customs.push(cv);
+    const opt = document.createElement('option');
+    opt.value = 'custom:' + (customs.length-1);
+    opt.textContent = '🖼️ Ảnh của tôi ' + customs.length;
+    $('pic').appendChild(opt);
+    $('pic').value = opt.value;
+    $('size').value = '4x3';
+    newGame();
+  }catch(err){
+    alert('Không đọc được ảnh này. Hãy thử ảnh định dạng JPG hoặc PNG.');
+  }
+}
+$('btnAdd').onclick = () => $('fileAdd').click();
+$('btnCam').onclick = () => $('fileCam').click();
+['fileAdd','fileCam'].forEach(id => $(id).onchange = e => { addPhoto(e.target.files[0]); e.target.value = ''; });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if(f) addPhoto(f);
+});
 $('chkGuide').onchange = drawBoard;
 $('chkGhost').onchange = drawBoard;
 $('btnPrev').onclick = () => { $('prevImg').src = sceneCv.toDataURL(); $('mPrev').classList.add('show'); };
